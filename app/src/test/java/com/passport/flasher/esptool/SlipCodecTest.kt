@@ -14,10 +14,10 @@ class SlipCodecTest {
         val encoded = SlipCodec.encode(payload)
         assertEquals(0xc0.toByte(), encoded[0])
         assertEquals(0xc0.toByte(), encoded[encoded.size - 1])
-        assertEquals(0xdb.toByte(), encoded[1])
-        assertEquals(0xdc.toByte(), encoded[2])
-        assertEquals(0xdb.toByte(), encoded[3])
-        assertEquals(0xdd.toByte(), encoded[4])
+        assertEquals(0xdb.toByte(), encoded[2])
+        assertEquals(0xdc.toByte(), encoded[3])
+        assertEquals(0xdb.toByte(), encoded[4])
+        assertEquals(0xdd.toByte(), encoded[5])
     }
 
     @Test
@@ -61,14 +61,20 @@ class SlipCodecTest {
         assertTrue(f2.contentEquals(decoded[1]))
     }
 
-    private fun MutableList<ByteArray>.addNotNullOrEmpty(decoded: ByteArray?) {
-        if (decoded != null) add(decoded)
-    }
-
-    private fun decodeAll(stream: ByteArray): List<ByteArray> {
+    @Test
+    fun decodeSkipsEmptyFrames() {
+        val stream = byteArrayOf(0xc0.toByte(), 0xc0.toByte(), 0x01, 0xc0.toByte(), 0xc0.toByte())
         val acc = SlipCodec.FrameAccumulator()
         val decoded = mutableListOf<ByteArray>()
-        for (b in stream) decoded.addNotNullOrEmpty(SlipCodec.decode(b, acc))
-        return decoded
+        for (b in stream) {
+            val frame = SlipCodec.decode(b, acc)
+            if (frame != null) decoded.add(frame)
+        }
+        assertEquals(1, decoded.size)
+        assertTrue(byteArrayOf(0x01).contentEquals(decoded[0]))
+    }
+
+    private fun MutableList<ByteArray>.addNotNullOrEmpty(decoded: ByteArray?) {
+        if (decoded != null) add(decoded)
     }
 }

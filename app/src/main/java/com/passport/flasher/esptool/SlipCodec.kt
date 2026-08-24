@@ -43,6 +43,7 @@ object SlipCodec {
         if (byte == END) {
             val frame = acc.partial!!
             acc.partial = ByteArray(0)
+            if (frame.isEmpty()) return null
             return frame
         }
         acc.partial = acc.partial!! + byte
