@@ -82,8 +82,14 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         viewModel = ViewModelProvider(this)[FlasherViewModel::class.java]
 
-        registerReceiver(usbPermissionReceiver, IntentFilter(ACTION_USB_PERMISSION))
-        registerReceiver(usbAttachedReceiver, IntentFilter(UsbManager.ACTION_USB_DEVICE_ATTACHED))
+        // targetSdk 34 起注册 receiver 必须声明 export 标志，否则启动即崩溃
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(usbPermissionReceiver, IntentFilter(ACTION_USB_PERMISSION), Context.RECEIVER_EXPORTED)
+            registerReceiver(usbAttachedReceiver, IntentFilter(UsbManager.ACTION_USB_DEVICE_ATTACHED), Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(usbPermissionReceiver, IntentFilter(ACTION_USB_PERMISSION))
+            registerReceiver(usbAttachedReceiver, IntentFilter(UsbManager.ACTION_USB_DEVICE_ATTACHED))
+        }
 
         binding.connectBtn.setOnClickListener {
             when (viewModel.connectionState.value) {
@@ -102,6 +108,14 @@ class MainActivity : AppCompatActivity() {
 
         binding.selectFirmwareBtn.setOnClickListener {
             filePickerLauncher.launch(arrayOf("application/octet-stream", "*/*"))
+        }
+
+        binding.baudrateSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                val baud = parent?.getItemAtPosition(position)?.toString()?.toIntOrNull() ?: return
+                viewModel.setBaudrate(baud)
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
 
         binding.writeBtn.setOnClickListener { viewModel.startWrite() }
@@ -217,12 +231,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUiForState(state: ConnectionState) {
+        val firmwareViews = listOf(binding.selectFirmwareBtn, binding.selectedFirmwareText, binding.baudrateLayout)
+        val actionViews = listOf(binding.writeBtn, binding.eraseBtn, binding.logTitle, binding.logScrollView, binding.clearLogsBtn)
         when (state) {
             ConnectionState.DISCONNECTED -> {
                 binding.connectBtn.text = getString(R.string.btn_connect)
                 binding.chipInfoText.text = getString(R.string.status_no_device)
-                binding.firmwareGroup.isVisible = false
-                binding.actionGroup.isVisible = false
+                firmwareViews.forEach { it.isVisible = false }
+                actionViews.forEach { it.isVisible = false }
             }
             ConnectionState.CONNECTING -> {
                 binding.connectBtn.text = getString(R.string.btn_connecting)
@@ -231,14 +247,14 @@ class MainActivity : AppCompatActivity() {
             ConnectionState.CONNECTED -> {
                 binding.connectBtn.text = getString(R.string.btn_disconnect)
                 binding.connectBtn.isEnabled = true
-                binding.firmwareGroup.isVisible = true
-                binding.actionGroup.isVisible = true
+                firmwareViews.forEach { it.isVisible = true }
+                actionViews.forEach { it.isVisible = true }
             }
             ConnectionState.ERROR -> {
                 binding.connectBtn.text = getString(R.string.btn_retry)
                 binding.connectBtn.isEnabled = true
-                binding.firmwareGroup.isVisible = false
-                binding.actionGroup.isVisible = false
+                firmwareViews.forEach { it.isVisible = false }
+                actionViews.forEach { it.isVisible = false }
             }
         }
     }

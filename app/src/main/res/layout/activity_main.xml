@@ -150,12 +150,6 @@
             android:textColor="#8a4b00"
             android:textSize="13sp" />
 
-        <androidx.constraintlayout.widget.Group
-            android:id="@+id/firmwareGroup"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:visibility="gone"
-            app:constraint_referenced_ids="selectFirmwareBtn,selectedFirmwareText,baudrateLayout" />
 
         <Button
             android:id="@+id/selectFirmwareBtn"
@@ -195,12 +189,6 @@
                 android:entries="@array/baudrates" />
         </LinearLayout>
 
-        <androidx.constraintlayout.widget.Group
-            android:id="@+id/actionGroup"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:visibility="gone"
-            app:constraint_referenced_ids="writeBtn,eraseBtn,progressBar,logTitle,logScrollView,clearLogsBtn" />
 
         <LinearLayout
             android:layout_width="match_parent"
