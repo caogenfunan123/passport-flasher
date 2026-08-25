@@ -35,7 +35,7 @@ object SlipCodec {
             when (byte) {
                 ESC_END -> acc.partial = acc.partial!! + END
                 ESC_ESC -> acc.partial = acc.partial!! + ESC
-                else -> throw IllegalStateException("Invalid SLIP escape: 0xdb, 0x${byte.toUByte().toString(16)}")
+                else -> throw IllegalStateException("无效的 SLIP 转义：0xdb 后跟 0x${byte.toUByte().toString(16)}")
             }
             return null
         }

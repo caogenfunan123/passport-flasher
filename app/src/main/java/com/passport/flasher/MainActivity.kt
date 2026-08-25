@@ -15,6 +15,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.IntentCompat
 import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.passport.flasher.databinding.ActivityMainBinding
@@ -40,7 +41,7 @@ class MainActivity : AppCompatActivity() {
                 if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
                     device?.let { viewModel.connect(it) }
                 } else {
-                    Toast.makeText(this@MainActivity, "USB permission denied", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, getString(R.string.toast_usb_permission_denied), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -62,12 +63,8 @@ class MainActivity : AppCompatActivity() {
         val files = uris.map { uri -> readFirmwareFile(uri) }.filterNotNull()
         if (files.isNotEmpty()) {
             val withAddresses = if (files.size == 1) {
-                val single = files[0]
-                if (single.name.lowercase().contains("bootloader")) {
-                    listOf(single.copy(address = 0x0L))
-                } else {
-                    listOf(single.copy(address = 0x0L))
-                }
+                // 单文件视为合并固件，写入 0x0
+                listOf(files[0].copy(address = 0x0L))
             } else {
                 files.map { f ->
                     val addr = FirmwareImage.inferAddress(f.name)
@@ -83,7 +80,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        viewModel = FlasherViewModel(application)
+        viewModel = ViewModelProvider(this)[FlasherViewModel::class.java]
 
         registerReceiver(usbPermissionReceiver, IntentFilter(ACTION_USB_PERMISSION))
         registerReceiver(usbAttachedReceiver, IntentFilter(UsbManager.ACTION_USB_DEVICE_ATTACHED))
@@ -95,7 +92,7 @@ class MainActivity : AppCompatActivity() {
                     if (device != null) {
                         requestPermissionAndConnect(device)
                     } else {
-                        Toast.makeText(this, "No Passport device found", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, getString(R.string.toast_no_device), Toast.LENGTH_SHORT).show()
                     }
                 }
                 ConnectionState.CONNECTED -> viewModel.disconnect()
@@ -141,7 +138,7 @@ class MainActivity : AppCompatActivity() {
 
             FirmwareFile(name = name, data = bytes, address = 0L)
         } catch (e: Exception) {
-            Toast.makeText(this, "Failed to read file: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.toast_read_file_failed, e.message ?: ""), Toast.LENGTH_SHORT).show()
             null
         }
     }
@@ -205,28 +202,40 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.firmwareFiles.collect { files ->
+                    binding.selectedFirmwareText.text = if (files.isEmpty()) {
+                        ""
+                    } else {
+                        val lines = files.map { "${it.name} → 0x${it.address.toString(16)}（${it.data.size} 字节）" }
+                        "已选择 ${files.size} 个固件文件：\n" + lines.joinToString("\n")
+                    }
+                }
+            }
+        }
     }
 
     private fun updateUiForState(state: ConnectionState) {
         when (state) {
             ConnectionState.DISCONNECTED -> {
-                binding.connectBtn.text = "Connect"
-                binding.chipInfoText.text = "No device"
+                binding.connectBtn.text = getString(R.string.btn_connect)
+                binding.chipInfoText.text = getString(R.string.status_no_device)
                 binding.firmwareGroup.isVisible = false
                 binding.actionGroup.isVisible = false
             }
             ConnectionState.CONNECTING -> {
-                binding.connectBtn.text = "Connecting..."
+                binding.connectBtn.text = getString(R.string.btn_connecting)
                 binding.connectBtn.isEnabled = false
             }
             ConnectionState.CONNECTED -> {
-                binding.connectBtn.text = "Disconnect"
+                binding.connectBtn.text = getString(R.string.btn_disconnect)
                 binding.connectBtn.isEnabled = true
                 binding.firmwareGroup.isVisible = true
                 binding.actionGroup.isVisible = true
             }
             ConnectionState.ERROR -> {
-                binding.connectBtn.text = "Retry"
+                binding.connectBtn.text = getString(R.string.btn_retry)
                 binding.connectBtn.isEnabled = true
                 binding.firmwareGroup.isVisible = false
                 binding.actionGroup.isVisible = false

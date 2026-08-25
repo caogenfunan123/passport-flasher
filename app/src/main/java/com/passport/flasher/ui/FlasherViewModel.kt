@@ -58,42 +58,42 @@ class FlasherViewModel(application: Application) : AndroidViewModel(application)
     fun connect(device: UsbDevice) {
         viewModelScope.launch {
             _connectionState.value = ConnectionState.CONNECTING
-            addLog("Connecting to ${device.productName ?: device.deviceName}...")
+            addLog("正在连接设备：${device.productName ?: device.deviceName}…")
             try {
                 val connection = withContext(Dispatchers.IO) {
                     usbHelper.openDevice(device)
                 }
                 if (connection == null) {
                     _connectionState.value = ConnectionState.ERROR
-                    addLog("Failed to open USB device", true)
+                    addLog("无法打开 USB 设备", true)
                     return@launch
                 }
                 val transport = UsbTransport(usbManager, device, connection)
                 withContext(Dispatchers.IO) { transport.open() }
                 val espLoader = EspLoader(transport, _baudrate.value, this@FlasherViewModel)
                 withContext(Dispatchers.IO) { espLoader.connect() }
-                chipName = espLoader.chipName
-                _chipInfo.value = "Chip: ${espLoader.chipName}"
+                _chipInfo.value = "芯片：${espLoader.chipName}"
                 if (espLoader.chipName == "ESP32-C3") {
                     withContext(Dispatchers.IO) { espLoader.runStub() }
-                    _chipInfo.value = "Chip: ESP32-C3 (Stub running)"
+                    withContext(Dispatchers.IO) { espLoader.changeBaud() }
+                    _chipInfo.value = "芯片：ESP32-C3（Stub 运行中）"
                     try {
                         val flashId = withContext(Dispatchers.IO) { espLoader.readFlashId() }
                         val sizeId = (flashId shr 16) and 0xff
                         val sizeMap = mapOf(0x17 to "8MB", 0x18 to "16MB", 0x16 to "4MB")
-                        val flashSize = sizeMap[sizeId] ?: "Unknown"
-                        _chipInfo.value = "Chip: ESP32-C3, Flash: $flashSize"
-                        addLog("Flash ID: 0x${flashId.toString(16)}, Size: $flashSize")
+                        val flashSize = sizeMap[sizeId] ?: "未知"
+                        _chipInfo.value = "芯片：ESP32-C3，Flash：$flashSize"
+                        addLog("Flash ID：0x${flashId.toString(16)}，大小：$flashSize")
                     } catch (e: Exception) {
-                        addLog("Flash ID read failed: ${e.message}", true)
+                        addLog("读取 Flash ID 失败：${e.message}", true)
                     }
                 }
                 loader = espLoader
                 _connectionState.value = ConnectionState.CONNECTED
-                addLog("Connected successfully")
+                addLog("连接成功")
             } catch (e: Exception) {
                 _connectionState.value = ConnectionState.ERROR
-                addLog("Connection failed: ${e.message}", true)
+                addLog("连接失败：${e.message}", true)
             }
         }
     }
@@ -107,15 +107,15 @@ class FlasherViewModel(application: Application) : AndroidViewModel(application)
             loader = null
             _connectionState.value = ConnectionState.DISCONNECTED
             _chipInfo.value = ""
-            addLog("Disconnected")
+            addLog("已断开连接")
         }
     }
 
     fun setFirmwareFiles(files: List<FirmwareFile>) {
         _firmwareFiles.value = files
-        addLog("Selected ${files.size} firmware file(s)")
+        addLog("已选择 ${files.size} 个固件文件")
         for (f in files) {
-            addLog("  ${f.name} -> 0x${f.address.toString(16)} (${f.data.size} bytes)")
+            addLog("  ${f.name} → 0x${f.address.toString(16)}（${f.data.size} 字节）")
         }
     }
 
@@ -126,12 +126,12 @@ class FlasherViewModel(application: Application) : AndroidViewModel(application)
     fun startWrite() {
         val ldr = loader ?: return
         val files = _firmwareFiles.value
-        if (files.isEmpty()) { addLog("No firmware files selected", true); return }
+        if (files.isEmpty()) { addLog("未选择固件文件", true); return }
 
         viewModelScope.launch {
             _flashState.value = FlashState.BUSY
             _progress.value = 0f
-            addLog("Starting firmware write...")
+            addLog("开始写入固件…")
             try {
                 val options = FlashOptions(
                     files = files,
@@ -145,12 +145,12 @@ class FlasherViewModel(application: Application) : AndroidViewModel(application)
                 withContext(Dispatchers.IO) { ldr.writeFlash(options) }
                 _progress.value = 1f
                 _flashState.value = FlashState.DONE
-                addLog("Firmware write completed successfully!")
+                addLog("固件写入成功！")
                 withContext(Dispatchers.IO) { ldr.after("hard_reset") }
-                addLog("Device reset, exiting...")
+                addLog("设备已复位")
             } catch (e: Exception) {
                 _flashState.value = FlashState.ERROR
-                addLog("Write failed: ${e.message}", true)
+                addLog("写入失败：${e.message}", true)
             }
         }
     }
@@ -159,26 +159,24 @@ class FlasherViewModel(application: Application) : AndroidViewModel(application)
         val ldr = loader ?: return
         viewModelScope.launch {
             _flashState.value = FlashState.BUSY
-            addLog("Erasing device...")
+            addLog("正在擦除设备…")
             try {
                 withContext(Dispatchers.IO) { ldr.eraseFlash() }
                 _flashState.value = FlashState.DONE
-                addLog("Erase completed")
+                addLog("擦除完成")
             } catch (e: Exception) {
                 _flashState.value = FlashState.ERROR
-                addLog("Erase failed: ${e.message}", true)
+                addLog("擦除失败：${e.message}", true)
             }
         }
     }
 
     fun clearLogs() { _logs.value = emptyList() }
 
-    private var chipName = ""
-
     override fun write(msg: String) { addLog(msg) }
-    override fun error(msg: String) { addLog("Error: $msg", true) }
+    override fun error(msg: String) { addLog("错误：$msg", true) }
     override fun info(msg: String) { addLog(msg) }
-    override fun debug(msg: String) { addLog("Debug: $msg") }
+    override fun debug(msg: String) { addLog("调试：$msg") }
 
     private fun addLog(msg: String, isError: Boolean = false) {
         val current = _logs.value

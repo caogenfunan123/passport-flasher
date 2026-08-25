@@ -131,9 +131,10 @@ class EspLoader(
                     return frame
                 }
             }
+            // 所有字节均已喂入 SLIP 状态机，避免下一轮重复解码
             pendingBytes = byteArrayOf()
         }
-        throw IOException("Read timeout after ${timeoutMs}ms")
+        throw IOException("读取超时：${timeoutMs}ms")
     }
 
     private suspend fun write(data: ByteArray) {
@@ -155,10 +156,10 @@ class EspLoader(
             if (op == null || opRet == op) return Pair(value, data)
             if (data.size >= 2 && (data[0].toInt() and 0xff) != 0 && (data[1].toInt() and 0xff) == ROM_INVALID_RECV_MSG) {
                 flushInput()
-                throw IOException("Unsupported command error")
+                throw IOException("不支持的命令")
             }
         }
-        throw IOException("Invalid response")
+        throw IOException("响应无效")
     }
 
     private suspend fun command(
@@ -182,26 +183,26 @@ class EspLoader(
         opDescription: String, op: Int? = null, data: ByteArray = byteArrayOf(),
         chk: Int = 0, responseDataLength: Int = 0, timeoutMs: Long = DEFAULT_TIMEOUT_MS,
     ): Any {
-        debug("check_command $opDescription")
+        debug("检查命令 $opDescription")
         val resp = command(op, data, chk, timeoutMs = timeoutMs)
         if (resp.second.size < responseDataLength + 2) {
             val status = if (resp.second.size >= 2) resp.second.sliceArray(0..1)
                 else byteArrayOf(resp.second.firstOrNull() ?: 0, 0)
             if ((status[0].toInt() and 0xff) != 0) {
-                throw IOException("Failed to $opDescription with status ${status.joinToString { "0x%02x".format(it) }}")
+                throw IOException("执行 $opDescription 失败，状态：${status.joinToString { "0x%02x".format(it) }}")
             }
-            throw IOException("Failed to $opDescription - only got ${resp.second.size} bytes data")
+            throw IOException("执行 $opDescription 失败，仅收到 ${resp.second.size} 字节数据")
         }
         val status0 = resp.second[responseDataLength].toInt() and 0xff
         if (status0 != 0) {
-            throw IOException("Failed to $opDescription with status ${resp.second[responseDataLength]} ${resp.second[responseDataLength + 1]}")
+            throw IOException("执行 $opDescription 失败，状态：${resp.second[responseDataLength]} ${resp.second[responseDataLength + 1]}")
         }
         return if (responseDataLength > 0) resp.second.copyOfRange(0, responseDataLength)
         else resp.first
     }
 
     suspend fun sync() {
-        debug("Sync")
+        debug("同步")
         val cmd = ByteArray(36)
         cmd[0] = 0x07; cmd[1] = 0x07; cmd[2] = 0x12; cmd[3] = 0x20
         for (i in 0 until 32) cmd[4 + i] = 0x55
@@ -214,7 +215,7 @@ class EspLoader(
     }
 
     private suspend fun connectAttempt(mode: String): String {
-        debug("connect_attempt $mode")
+        debug("连接尝试：$mode")
         if (mode == "usb_reset" || transport.isPassport()) {
             usbJtagSerialReset()
         } else {
@@ -224,22 +225,22 @@ class EspLoader(
         val bootStr = readBytes.decodeToString()
         val bootMatch = Regex("boot:(0x[0-9a-fA-F]+)").find(bootStr)
         val downloadMatch = bootStr.contains("waiting for download")
-        if (bootMatch != null) debug("bootMode=${bootMatch.groupValues[1]} downloadMode=$downloadMatch")
+        if (bootMatch != null) debug("引导模式=${bootMatch.groupValues[1]} 下载模式=$downloadMatch")
 
         for (i in 0 until 5) {
-            debug("Sync attempt $i")
+            debug("同步尝试 $i")
             flushInput()
             try {
                 sync()
                 return "success"
             } catch (e: Exception) {
-                debug("Sync error: ${e.message}")
+                debug("同步错误：${e.message}")
             }
         }
         return if (bootMatch != null) {
-            if (downloadMatch) "Download mode detected but no sync reply - check TX path"
-            else "Wrong boot mode detected (${bootMatch.groupValues[1]})"
-        } else "Failed to connect"
+            if (downloadMatch) "检测到下载模式但无同步应答，请检查 TX 线路"
+            else "检测到错误的引导模式（${bootMatch.groupValues[1]}）"
+        } else "连接失败"
     }
 
     private suspend fun usbJtagSerialReset() {
@@ -250,23 +251,22 @@ class EspLoader(
     }
 
     suspend fun connect(mode: String = "default_reset", attempts: Int = 7, detecting: Boolean = true) {
-        info("Connecting...")
+        info("正在连接...")
         transport.setBaudrate(romBaudrate)
-        var resp: String
+        var resp = "连接失败"
         for (i in 0 until attempts) {
             resp = connectAttempt(mode)
             if (resp == "success") break
         }
-        resp = try { connectAttempt(mode) } catch (e: Exception) { e.message ?: "unknown" }
-        if (resp != "success") throw IOException("Failed to connect with device: $resp")
-        info("Connected")
+        if (resp != "success") throw IOException("连接设备失败：$resp")
+        info("已连接")
         if (detecting) {
             val magic = readReg(CHIP_DETECT_MAGIC_REG_ADDR)
             chipName = when (magic.toLong() and 0xffffffffL) {
                 ESP32C3_MAGIC_1, ESP32C3_MAGIC_2, ESP32C3_MAGIC_3, ESP32C3_MAGIC_4 -> "ESP32-C3"
-                else -> "Unknown (0x${(magic.toLong() and 0xffffffffL).toString(16)})"
+                else -> "未知（0x${(magic.toLong() and 0xffffffffL).toString(16)}）"
             }
-            info("Detected chip: $chipName")
+            info("检测到芯片：$chipName")
         }
     }
 
@@ -315,7 +315,7 @@ class EspLoader(
                 return
             } catch (e: Exception) {
                 if (attempt == 1) throw e
-                debug("Block $seq write failed, retrying...")
+                debug("块 $seq 写入失败，重试中...")
                 delay(150)
             }
         }
@@ -331,7 +331,7 @@ class EspLoader(
         val eraseBlocks = ((size + FLASH_WRITE_SIZE - 1) / FLASH_WRITE_SIZE).toInt()
         val writeSize = if (isStub) size else eraseBlocks * FLASH_WRITE_SIZE.toLong()
         val timeout = if (isStub) DEFAULT_TIMEOUT_MS else timeoutPerMb(ERASE_REGION_TIMEOUT_PER_MB, writeSize)
-        info("Compressed $size bytes to $compsize...")
+        info("压缩 $size 字节为 $compsize...")
         var pkt = appendArray(intToByteArray(writeSize.toInt()), intToByteArray(numBlocks))
         pkt = appendArray(pkt, intToByteArray(FLASH_WRITE_SIZE))
         pkt = appendArray(pkt, intToByteArray(offset.toInt()))
@@ -352,7 +352,7 @@ class EspLoader(
                 return
             } catch (e: Exception) {
                 if (attempt == 1) throw e
-                debug("Compressed block $seq write failed, retrying...")
+                debug("压缩块 $seq 写入失败，重试中...")
                 delay(150)
             }
         }
@@ -364,9 +364,9 @@ class EspLoader(
     }
 
     suspend fun eraseFlash() {
-        info("Erasing flash (this may take a while)...")
+        info("正在擦除 Flash（可能需要较长时间）...")
         checkCommand("erase flash", ESP_ERASE_FLASH, timeoutMs = CHIP_ERASE_TIMEOUT_MS)
-        info("Chip erase completed")
+        info("芯片擦除完成")
     }
 
     suspend fun flashMd5sum(addr: Long, size: Long): String {
@@ -401,12 +401,12 @@ class EspLoader(
 
     suspend fun runStub() {
         if (syncStubDetected) {
-            info("Stub already running")
+            info("Stub 已在运行")
             return
         }
-        info("Uploading stub...")
-        val textBytes = Base64.getDecoder().decode(StubData.TEXT)
-        val dataBytes = Base64.getDecoder().decode(StubData.DATA)
+        info("上传 Stub...")
+        val textBytes = java.util.Base64.getDecoder().decode(StubData.TEXT)
+        val dataBytes = java.util.Base64.getDecoder().decode(StubData.DATA)
         val stubs = listOf(textBytes to StubData.TEXT_START, dataBytes to StubData.DATA_START)
         for ((stub, start) in stubs) {
             if (stub.isEmpty()) continue
@@ -418,18 +418,18 @@ class EspLoader(
                 memBlock(stub.copyOfRange(from, to), seq)
             }
         }
-        info("Running stub...")
+        info("运行 Stub...")
         memFinish(StubData.ENTRY)
         val response = read(DEFAULT_TIMEOUT_MS)
         val responseStr = response.decodeToString()
-        if (responseStr != "OHAI") throw IOException("Failed to start stub. Unexpected response: $responseStr")
-        info("Stub running...")
+        if (responseStr != "OHAI") throw IOException("启动 Stub 失败，意外的响应：$responseStr")
+        info("Stub 运行中...")
         isStub = true
     }
 
     suspend fun changeBaud() {
         if (baudrate == romBaudrate) return
-        info("Changing baudrate to $baudrate")
+        info("切换波特率至 $baudrate")
         val secondArg = if (isStub) romBaudrate else 0
         val pkt = appendArray(intToByteArray(baudrate), intToByteArray(secondArg))
         command(0x0f, pkt)
@@ -456,11 +456,13 @@ class EspLoader(
         val SPI_USR_CMD = 1 shl 18
         val SPI_USR_REG = base + 0x18
         val SPI_USR2_REG = base + 0x20
+        val SPI_MISO_DLEN_REG = base + 0x28
         val SPI_W0_REG = base + 0x58
         val SPI_USR_COMMAND = 1 shl 31
         val SPI_USR_MISO = 1 shl 28
         val oldUsr = readReg(SPI_USR_REG.toLong())
         val oldUsr2 = readReg(SPI_USR2_REG.toLong())
+        writeReg(SPI_MISO_DLEN_REG.toLong(), 23)
         writeReg(SPI_USR_REG.toLong(), SPI_USR_COMMAND or SPI_USR_MISO)
         val cmdVal = (7 shl 28) or SPIFLASH_RDID
         writeReg(SPI_USR2_REG.toLong(), cmdVal)
@@ -486,7 +488,7 @@ class EspLoader(
             0x1a to "64MB", 0x1b to "128MB", 0x20 to "64MB", 0x21 to "128MB",
         )
         val size = detected[sizeId] ?: "4MB"
-        info("Detected flash size: $size")
+        info("检测到 Flash 大小：$size")
         return size
     }
 
@@ -496,7 +498,7 @@ class EspLoader(
     }
 
     private fun rawDeflate(data: ByteArray): ByteArray {
-        val deflater = Deflater(Deflater.BEST_COMPRESSION, true)
+        val deflater = Deflater(Deflater.BEST_COMPRESSION)
         deflater.setInput(data)
         deflater.finish()
         val out = ByteArrayOutputStream()
@@ -510,12 +512,12 @@ class EspLoader(
     }
 
     suspend fun writeFlash(options: FlashOptions) {
-        debug("writeFlash started")
+        debug("开始写入 Flash")
         if (options.flashSize != "keep") {
             val flashEnd = flashSizeBytes(options.flashSize)
             for (f in options.files) {
                 if (f.data.size + f.address > flashEnd) {
-                    throw IOException("File ${f.name} doesn't fit in flash")
+                    throw IOException("文件 ${f.name} 空间不足")
                 }
             }
         }
@@ -535,7 +537,7 @@ class EspLoader(
                 var seq = 0
                 var bytesSent = 0
                 var imageOffset = 0
-                val inflater = Inflater(true)
+                val inflater = Inflater()
                 var totalUncompressed = 0
                 options.reportProgress?.invoke(i, 0, compressed.size)
                 var timeoutMs = 5000L
@@ -550,7 +552,7 @@ class EspLoader(
                     if (n > 0) totalUncompressed += n
                     if (isLast) inflater.end()
                     val blockUncompressed = totalUncompressed - lenPrev
-                    val bt = timeoutPerMb(ERASE_WRITE_TIMEOUT_PER_MB, blockUncompressed.toLong())
+                    val bt = maxOf(3000L, timeoutPerMb(ERASE_WRITE_TIMEOUT_PER_MB, blockUncompressed.toLong()))
                     if (!isStub) timeoutMs = bt
                     flashDeflBlock(block, seq, timeoutMs)
                     if (isStub) timeoutMs = bt
@@ -559,7 +561,7 @@ class EspLoader(
                     seq++
                     options.reportProgress?.invoke(i, bytesSent, compressed.size)
                 }
-                info("Wrote $uncsize bytes ($bytesSent compressed) at 0x${address.toString(16)}")
+                info("写入 $uncsize 字节（压缩 $bytesSent 字节）地址 0x${address.toString(16)}")
                 if (isStub) flashDeflFinish(false, timeoutMs)
             } else {
                 flashBegin(uncsize, address)
@@ -576,7 +578,7 @@ class EspLoader(
                         block.copyInto(padded)
                         block = padded
                     }
-                    val bt = timeoutPerMb(ERASE_WRITE_TIMEOUT_PER_MB, block.size.toLong())
+                    val bt = maxOf(3000L, timeoutPerMb(ERASE_WRITE_TIMEOUT_PER_MB, block.size.toLong()))
                     if (!isStub) timeoutMs = bt
                     flashBlock(block, seq, timeoutMs)
                     if (isStub) timeoutMs = bt
@@ -585,41 +587,48 @@ class EspLoader(
                     seq++
                     options.reportProgress?.invoke(i, bytesSent, image.size.toInt())
                 }
-                info("Wrote ${image.size} bytes at 0x${address.toString(16)}")
+                info("写入 ${image.size} 字节，地址 0x${address.toString(16)}")
                 if (isStub) flashFinish(false, timeoutMs)
             }
             if (calcmd5 != null) {
-                info("File md5: $calcmd5")
+                info("文件 MD5：$calcmd5")
                 val flashMd5 = flashMd5sum(address, uncsize)
-                info("Flash md5: $flashMd5")
-                if (calcmd5 != flashMd5) throw IOException("MD5 mismatch! File=$calcmd5 Flash=$flashMd5")
-                info("Hash verified")
+                info("Flash MD5：$flashMd5")
+                if (calcmd5 != flashMd5) throw IOException("MD5 不匹配！文件=$calcmd5 Flash=$flashMd5")
+                info("MD5 校验通过")
             }
         }
-        info("Leaving...")
+        info("退出...")
     }
 
     private fun flashSizeBytes(flashSize: String): Long {
         return when {
             "KB" in flashSize -> flashSize.replace("KB", "").toLong() * 1024
             "MB" in flashSize -> flashSize.replace("MB", "").toLong() * 1024 * 1024
-            else -> throw IllegalArgumentException("Unknown flash size: $flashSize")
+            else -> throw IllegalArgumentException("未知 Flash 大小：$flashSize")
         }
     }
 
     suspend fun after(mode: String = "hard_reset") {
         when (mode) {
             "hard_reset" -> {
-                info("Hard resetting via RTS pin...")
-                transport.setRTS(false)
-                delay(200)
+                if (transport.isPassport()) {
+                    // USB-Serial/JTAG 无 RTS 连 EN，需专用 DTR/RTS 序列复位
+                    info("正在复位设备...")
+                    usbJtagSerialReset()
+                } else {
+                    info("通过 RTS 引脚硬复位...")
+                    delay(200)
+                    transport.setRTS(false)
+                    delay(200)
+                }
             }
             "soft_reset" -> {
-                info("Soft resetting...")
+                info("软复位...")
                 softReset(false)
             }
-            "no_reset_stub" -> info("Staying in flasher stub.")
-            else -> info("Staying in bootloader.")
+            "no_reset_stub" -> info("保持在 flasher stub 中。")
+            else -> info("保持在 bootloader 中。")
         }
     }
 
@@ -631,34 +640,6 @@ class EspLoader(
         } else {
             flashBegin(0, 0)
             flashFinish(true)
-        }
-    }
-}
-
-private object Base64 {
-    private val ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-    private val DECODE = IntArray(256) { -1 }.also { arr ->
-        ALPHABET.forEachIndexed { i, c -> arr[c.code] = i }
-        arr['='.code] = 0
-    }
-
-    fun getDecoder() = Decoder()
-
-    class Decoder {
-        fun decode(str: String): ByteArray {
-            val clean = str.filter { it != '\n' && it != '\r' && it != ' ' }
-            val out = ByteArray(clean.length * 3 / 4)
-            var pos = 0
-            var i = 0
-            while (i < clean.length) {
-                val a = DECODE[clean[i].code]; val b = DECODE[clean[i + 1].code]
-                val c = DECODE[clean[i + 2].code]; val d = DECODE[clean[i + 3].code]
-                out[pos++] = ((a shl 2) or (b shr 4)).toByte()
-                out[pos++] = ((b shl 4) or (c shr 2)).toByte()
-                out[pos++] = ((c shl 6) or d).toByte()
-                i += 4
-            }
-            return out.copyOf(pos)
         }
     }
 }

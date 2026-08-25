@@ -80,6 +80,7 @@ class UsbTransport(
 
     /** ESP32-C3 USB-Serial/JTAG 不支持标准 setSignals；通过 CDC 控制请求模拟 DTR/RTS。 */
     fun setDTR(state: Boolean) {
+        isDtrHigh = state
         _setControlLineState((if (state) 1 else 0) or ((if (isRtsHigh) 1 else 0) shl 1))
     }
 

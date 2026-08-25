@@ -1,4 +1,47 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Passport Flasher</string>
+    <string name="app_name">AI Passport 固件刷写</string>
+
+    <!-- 标题区 -->
+    <string name="brand_title">AI Passport 固件刷写</string>
+    <string name="brand_slogan">固件留在本地，创意写进设备。</string>
+
+    <!-- 连接状态 -->
+    <string name="btn_connect">连接设备</string>
+    <string name="btn_connecting">正在连接…</string>
+    <string name="btn_disconnect">断开连接</string>
+    <string name="btn_retry">重试</string>
+    <string name="status_no_device">未连接设备</string>
+
+    <!-- 使用说明 -->
+    <string name="section_guide">使用说明</string>
+    <string name="guide_desc">这是给开发者和高级用户的独立工具：连接设备、选择本地固件，然后完成写入与校验。固件文件仅在手机本地读取，不会上传服务器。</string>
+    <string name="step1_title">01 · 连接设备</string>
+    <string name="step1_desc">请使用支持数据传输的 USB 线连接 AI Passport。手机弹出 USB 授权对话框后，请选择「允许」。</string>
+    <string name="step2_title">02 · 选择固件</string>
+    <string name="step2_desc">支持单个合并固件或多个分区 .bin 文件，最多可选择 8 个文件。</string>
+    <string name="step3_title">03 · 写入与重启</string>
+    <string name="step3_desc">设置波特率后点击「开始写入」，写入完成并校验通过后设备将自动重启。</string>
+
+    <!-- 安全提示 -->
+    <string name="section_safety">安全提示</string>
+    <string name="safety_1">1. 请确认连接的是 AI Passport（USB JTAG/serial debug unit）。不要选择蓝牙外围设备、SPP、耳机等设备。</string>
+    <string name="safety_2">2. 刷写过程中请勿拔出设备或断开连接，否则可能导致设备无法启动。</string>
+    <string name="safety_3">3. 刷写会覆盖设备中的原固件，重要数据请提前备份。</string>
+    <string name="safety_4">4. 若连接无响应，请重新插拔 USB 线后再试。</string>
+
+    <!-- 固件选择 -->
+    <string name="btn_select_firmware">选择固件 (.bin)</string>
+    <string name="baudrate_label">波特率</string>
+
+    <!-- 操作按钮 -->
+    <string name="btn_write">开始写入</string>
+    <string name="btn_erase">清除设备数据</string>
+    <string name="btn_clear_logs">清空日志</string>
+    <string name="section_log">设备日志</string>
+
+    <!-- Toast -->
+    <string name="toast_usb_permission_denied">USB 授权被拒绝，无法访问设备</string>
+    <string name="toast_no_device">未找到 AI Passport 设备，请先插入设备</string>
+    <string name="toast_read_file_failed">读取文件失败：%1$s</string>
 </resources>
