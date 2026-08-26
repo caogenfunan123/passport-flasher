@@ -429,6 +429,11 @@ class EspLoader(
 
     suspend fun changeBaud() {
         if (baudrate == romBaudrate) return
+        // USB-JTAG/Serial 通过 USB 直连，没有可调节的真实 UART 时钟，切换无意义且可能干扰 stub
+        if (transport.isPassport()) {
+            debug("USB-JTAG 设备跳过波特率切换")
+            return
+        }
         info("切换波特率至 $baudrate")
         val secondArg = if (isStub) romBaudrate else 0
         val pkt = appendArray(intToByteArray(baudrate), intToByteArray(secondArg))

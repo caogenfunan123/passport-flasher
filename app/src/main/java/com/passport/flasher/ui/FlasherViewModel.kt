@@ -25,7 +25,7 @@ enum class FlashState { IDLE, BUSY, DONE, ERROR }
 
 class FlasherViewModel(application: Application) : AndroidViewModel(application), FlashTerminal {
     private val usbManager = application.getSystemService(Context.USB_SERVICE) as UsbManager
-    private val usbHelper = UsbManagerHelper(usbManager)
+    private val usbHelper = UsbManagerHelper(usbManager, application)
 
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -59,6 +59,7 @@ class FlasherViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _connectionState.value = ConnectionState.CONNECTING
             addLog("正在连接设备：${device.productName ?: device.deviceName}…")
+            var transport: UsbTransport? = null
             try {
                 val connection = withContext(Dispatchers.IO) {
                     usbHelper.openDevice(device)
@@ -68,7 +69,7 @@ class FlasherViewModel(application: Application) : AndroidViewModel(application)
                     addLog("无法打开 USB 设备", true)
                     return@launch
                 }
-                val transport = UsbTransport(usbManager, device, connection)
+                transport = UsbTransport(usbManager, device, connection)
                 withContext(Dispatchers.IO) { transport.open() }
                 val espLoader = EspLoader(transport, _baudrate.value, this@FlasherViewModel)
                 withContext(Dispatchers.IO) { espLoader.connect() }
@@ -92,22 +93,26 @@ class FlasherViewModel(application: Application) : AndroidViewModel(application)
                 _connectionState.value = ConnectionState.CONNECTED
                 addLog("连接成功")
             } catch (e: Exception) {
+                // 连接失败时关闭已打开的 USB 连接，避免泄漏
+                try { withContext(Dispatchers.IO) { transport?.close() } } catch (_: Exception) {}
                 _connectionState.value = ConnectionState.ERROR
                 addLog("连接失败：${e.message}", true)
             }
         }
     }
 
-    fun disconnect() {
+    fun disconnect(reset: Boolean = true) {
         viewModelScope.launch {
             loader?.let {
-                try { withContext(Dispatchers.IO) { it.after("hard_reset") } } catch (_: Exception) {}
+                if (reset) {
+                    try { withContext(Dispatchers.IO) { it.after("hard_reset") } } catch (_: Exception) {}
+                }
+                try { withContext(Dispatchers.IO) { it.transport.close() } } catch (_: Exception) {}
             }
-            loader?.let { it.transport.close() }
             loader = null
             _connectionState.value = ConnectionState.DISCONNECTED
             _chipInfo.value = ""
-            addLog("已断开连接")
+            addLog(if (reset) "已断开连接" else "USB 设备已拔出")
         }
     }
 

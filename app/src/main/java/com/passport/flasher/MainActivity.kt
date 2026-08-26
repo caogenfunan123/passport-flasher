@@ -50,9 +50,32 @@ class MainActivity : AppCompatActivity() {
     private val usbAttachedReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val device = IntentCompat.getParcelableExtra(intent, UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
-            if (device != null && viewModel.connectionState.value == ConnectionState.DISCONNECTED) {
-                requestPermissionAndConnect(device)
+            handleUsbAttach(device)
+        }
+    }
+
+    private val usbDetachedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == UsbManager.ACTION_USB_DEVICE_DETACHED) {
+                val device = IntentCompat.getParcelableExtra(intent, UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
+                if (device != null && viewModel.connectionState.value == ConnectionState.CONNECTED) {
+                    viewModel.disconnect(reset = false)
+                    Toast.makeText(this@MainActivity, getString(R.string.toast_usb_detached), Toast.LENGTH_SHORT).show()
+                }
             }
+        }
+    }
+
+    private fun handleUsbAttach(device: UsbDevice?) {
+        if (device != null && viewModel.connectionState.value == ConnectionState.DISCONNECTED) {
+            requestPermissionAndConnect(device)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
+            handleUsbAttach(IntentCompat.getParcelableExtra(intent, UsbManager.EXTRA_DEVICE, UsbDevice::class.java))
         }
     }
 
@@ -63,8 +86,13 @@ class MainActivity : AppCompatActivity() {
         val files = uris.map { uri -> readFirmwareFile(uri) }.filterNotNull()
         if (files.isNotEmpty()) {
             val withAddresses = if (files.size == 1) {
-                // 单文件视为合并固件，写入 0x0
-                listOf(files[0].copy(address = 0x0L))
+                val single = files[0]
+                val name = single.name.lowercase()
+                // 仅当明确是合并固件（或 bootloader）时才写入 0x0，
+                // 其余单文件（app.bin 等）按分区地址推断，避免覆盖 bootloader 变砖
+                val startFromZero = listOf("merged", "merge", "combined", "full", "bootloader", "factory")
+                    .any { name.contains(it) }
+                listOf(single.copy(address = if (startFromZero) 0x0L else FirmwareImage.inferAddress(name)))
             } else {
                 files.map { f ->
                     val addr = FirmwareImage.inferAddress(f.name)
@@ -86,9 +114,11 @@ class MainActivity : AppCompatActivity() {
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             registerReceiver(usbPermissionReceiver, IntentFilter(ACTION_USB_PERMISSION), Context.RECEIVER_EXPORTED)
             registerReceiver(usbAttachedReceiver, IntentFilter(UsbManager.ACTION_USB_DEVICE_ATTACHED), Context.RECEIVER_EXPORTED)
+            registerReceiver(usbDetachedReceiver, IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED), Context.RECEIVER_EXPORTED)
         } else {
             registerReceiver(usbPermissionReceiver, IntentFilter(ACTION_USB_PERMISSION))
             registerReceiver(usbAttachedReceiver, IntentFilter(UsbManager.ACTION_USB_DEVICE_ATTACHED))
+            registerReceiver(usbDetachedReceiver, IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED))
         }
 
         binding.connectBtn.setOnClickListener {
@@ -263,5 +293,6 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         try { unregisterReceiver(usbPermissionReceiver) } catch (_: Exception) {}
         try { unregisterReceiver(usbAttachedReceiver) } catch (_: Exception) {}
+        try { unregisterReceiver(usbDetachedReceiver) } catch (_: Exception) {}
     }
 }

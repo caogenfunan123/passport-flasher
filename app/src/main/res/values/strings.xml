@@ -43,5 +43,6 @@
     <!-- Toast -->
     <string name="toast_usb_permission_denied">USB 授权被拒绝，无法访问设备</string>
     <string name="toast_no_device">未找到 AI Passport 设备，请先插入设备</string>
+    <string name="toast_usb_detached">USB 设备已拔出</string>
     <string name="toast_read_file_failed">读取文件失败：%1$s</string>
 </resources>
