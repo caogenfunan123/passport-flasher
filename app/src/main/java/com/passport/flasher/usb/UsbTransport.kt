@@ -154,5 +154,10 @@ class UsbTransport(
 
     fun flushInput() {
         synchronized(readLock) { rxBuffer = byteArrayOf() }
+        // Android bulk 读是拉模式，残留应答留在 USB 驱动缓冲中，
+        // 必须用短超时循环读取排空，仅清本地缓冲无效
+        val ep = bulkIn ?: return
+        val buf = ByteArray(ep.maxPacketSize)
+        while (connection.bulkTransfer(ep, buf, buf.size, 10) > 0) { /* 排空 */ }
     }
 }

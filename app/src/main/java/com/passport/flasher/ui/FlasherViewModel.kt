@@ -138,13 +138,17 @@ class FlasherViewModel(application: Application) : AndroidViewModel(application)
             _progress.value = 0f
             addLog("开始写入固件…")
             try {
+                // 与官方 web-flasher 一致：按累计字节计算全局进度，避免多文件时进度回跳
+                val offsets = files.scan(0L) { acc, f -> acc + f.data.size }
+                val totalBytes = files.sumOf { it.data.size }.coerceAtLeast(1)
                 val options = FlashOptions(
                     files = files,
                     compress = true,
                     eraseAll = false,
                     calculateMD5Hash = true,
-                    reportProgress = { _, sent, total ->
-                        _progress.value = if (total > 0) sent.toFloat() / total else 0f
+                    reportProgress = { idx, sent, total ->
+                        val fileWeight = if (total > 0) files[idx].data.size.toDouble() * sent / total else 0.0
+                        _progress.value = ((offsets[idx] + fileWeight) / totalBytes).toFloat().coerceIn(0f, 1f)
                     },
                 )
                 withContext(Dispatchers.IO) { ldr.writeFlash(options) }

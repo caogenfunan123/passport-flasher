@@ -167,6 +167,9 @@ class EspLoader(
         waitResponse: Boolean = true, timeoutMs: Long = DEFAULT_TIMEOUT_MS,
     ): Pair<Int, ByteArray> {
         if (op != null) {
+            // 发送前丢弃残留数据（如上一条 fire-and-forget 写入的多余应答），
+            // 否则会被误读为本次响应导致协议失序
+            flushInput()
             val pkt = ByteArray(8 + data.size)
             pkt[0] = 0x00; pkt[1] = op.toByte()
             pkt[2] = (data.size and 0xff).toByte(); pkt[3] = ((data.size shr 8) and 0xff).toByte()
@@ -375,7 +378,9 @@ class EspLoader(
         pkt = appendArray(pkt, intToByteArray(0)); pkt = appendArray(pkt, intToByteArray(0))
         val respLen = if (isStub) 16 else 32
         val res = checkCommand("calculate md5sum", ESP_SPI_FLASH_MD5, pkt, responseDataLength = respLen, timeoutMs = timeout)
-        return (res as ByteArray).joinToString("") { "%02x".format(it) }
+        // stub 返回 16 字节二进制 MD5；ROM 返回 32 字节 ASCII hex 文本
+        return if (isStub) (res as ByteArray).joinToString("") { "%02x".format(it) }
+        else String(res as ByteArray, Charsets.US_ASCII).lowercase()
     }
 
     suspend fun memBegin(size: Long, blocks: Int, blocksize: Int, offset: Long) {
@@ -503,7 +508,8 @@ class EspLoader(
     }
 
     private fun rawDeflate(data: ByteArray): ByteArray {
-        val deflater = Deflater(Deflater.BEST_COMPRESSION)
+        // nowrap=true 生成 raw deflate（RFC1951）；默认 false 是 zlib 流（0x78 头 + adler32 尾），stub 无法解压
+        val deflater = Deflater(Deflater.BEST_COMPRESSION, true)
         deflater.setInput(data)
         deflater.finish()
         val out = ByteArrayOutputStream()
