@@ -189,6 +189,7 @@ class FlasherViewModel(application: Application) : AndroidViewModel(application)
 
     private fun addLog(msg: String, isError: Boolean = false) {
         val current = _logs.value
-        _logs.value = current + LogEntry(msg, isError)
+        // 与官方 web-flasher 一致：只保留最近 80 条，防止长时间刷机内存无限增长
+        _logs.value = (current + LogEntry(msg, isError)).takeLast(80)
     }
 }

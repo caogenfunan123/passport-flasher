@@ -8,7 +8,6 @@ import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import android.util.Log
 import java.io.IOException
-import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * USB 传输层：封装 Android USB Host 的 bulk 读写与控制传输，
@@ -43,10 +42,6 @@ class UsbTransport(
     @Volatile var isOpen = false
         private set
 
-    private var rxBuffer = byteArrayOf()
-    private val writeLock = Object()
-    private val readLock = Object()
-
     fun open() {
         device.getInterface(0).let { intf ->
             claimedInterface = intf
@@ -65,7 +60,6 @@ class UsbTransport(
 
     fun close() {
         isOpen = false
-        synchronized(readLock) { rxBuffer = byteArrayOf() }
         claimedInterface?.let { intf ->
             runCatching { connection.releaseInterface(intf) }
             claimedInterface = null
@@ -136,7 +130,8 @@ class UsbTransport(
         while (offset < data.size) {
             val chunk = minOf(data.size - offset, 64)
             val n = bulkOut?.let { connection.bulkTransfer(it, data, offset, chunk, timeoutMs) } ?: -1
-            if (n < 0) throw IOException("bulk write 失败, offset=$offset")
+            // n==0 时 offset 不前进会死循环，一并按失败处理
+            if (n <= 0) throw IOException("bulk write 失败, offset=$offset")
             written += n
             offset += n
         }
@@ -153,7 +148,6 @@ class UsbTransport(
     }
 
     fun flushInput() {
-        synchronized(readLock) { rxBuffer = byteArrayOf() }
         // Android bulk 读是拉模式，残留应答留在 USB 驱动缓冲中，
         // 必须用短超时循环读取排空，仅清本地缓冲无效
         val ep = bulkIn ?: return

@@ -548,29 +548,36 @@ class EspLoader(
                 var seq = 0
                 var bytesSent = 0
                 var imageOffset = 0
-                val inflater = Inflater()
+                // nowrap=true 与 rawDeflate 对应；仅用于本地估算每块的未压缩字节数（超时调整）
+                val inflater = Inflater(true)
+                val uncompBuf = ByteArray(65536)
                 var totalUncompressed = 0
                 options.reportProgress?.invoke(i, 0, compressed.size)
                 var timeoutMs = 5000L
-                while (imageOffset < compressed.size) {
-                    val blockSize = minOf(FLASH_WRITE_SIZE, compressed.size - imageOffset)
-                    val block = compressed.copyOfRange(imageOffset, imageOffset + blockSize)
-                    val isLast = imageOffset + blockSize >= compressed.size
-                    val lenPrev = totalUncompressed
-                    inflater.setInput(block)
-                    val uncompBuf = ByteArray(blockSize * 2)
-                    val n = inflater.inflate(uncompBuf)
-                    if (n > 0) totalUncompressed += n
-                    if (isLast) inflater.end()
-                    val blockUncompressed = totalUncompressed - lenPrev
-                    val bt = maxOf(3000L, timeoutPerMb(ERASE_WRITE_TIMEOUT_PER_MB, blockUncompressed.toLong()))
-                    if (!isStub) timeoutMs = bt
-                    flashDeflBlock(block, seq, timeoutMs)
-                    if (isStub) timeoutMs = bt
-                    bytesSent += block.size
-                    imageOffset += blockSize
-                    seq++
-                    options.reportProgress?.invoke(i, bytesSent, compressed.size)
+                try {
+                    while (imageOffset < compressed.size) {
+                        val blockSize = minOf(FLASH_WRITE_SIZE, compressed.size - imageOffset)
+                        val block = compressed.copyOfRange(imageOffset, imageOffset + blockSize)
+                        val lenPrev = totalUncompressed
+                        // 必须耗尽本块全部输入：固定小缓冲会在高压缩比时截断并错乱跨块状态
+                        inflater.setInput(block)
+                        while (!inflater.finished()) {
+                            val n = inflater.inflate(uncompBuf)
+                            if (n == 0) break
+                            totalUncompressed += n
+                        }
+                        val blockUncompressed = totalUncompressed - lenPrev
+                        val bt = maxOf(3000L, timeoutPerMb(ERASE_WRITE_TIMEOUT_PER_MB, blockUncompressed.toLong()))
+                        if (!isStub) timeoutMs = bt
+                        flashDeflBlock(block, seq, timeoutMs)
+                        if (isStub) timeoutMs = bt
+                        bytesSent += block.size
+                        imageOffset += blockSize
+                        seq++
+                        options.reportProgress?.invoke(i, bytesSent, compressed.size)
+                    }
+                } finally {
+                    try { inflater.end() } catch (_: Exception) {}
                 }
                 info("写入 $uncsize 字节（压缩 $bytesSent 字节）地址 0x${address.toString(16)}")
                 if (isStub) flashDeflFinish(false, timeoutMs)
