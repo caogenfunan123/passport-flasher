@@ -18,16 +18,4 @@ class FirmwareImageTest {
     fun inferAddressFallbackToApp() {
         Assert.assertEquals(0x10000L, FirmwareImage.inferAddress("unknown_random.bin"))
     }
-
-    @Test
-    fun isMergeFirmwareSingleFileAtZero() {
-        val f = FirmwareFile("all.bin", ByteArray(10), 0L)
-        Assert.assertTrue(FirmwareImage.isMergeFirmware(listOf(f)))
-    }
-
-    @Test
-    fun isMergeFirmwareSingleFileAnywhere() {
-        val f = FirmwareFile("app.bin", ByteArray(10), 0x10000)
-        Assert.assertTrue(FirmwareImage.isMergeFirmware(listOf(f)))
-    }
 }

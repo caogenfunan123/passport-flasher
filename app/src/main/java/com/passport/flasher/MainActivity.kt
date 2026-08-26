@@ -159,6 +159,12 @@ class MainActivity : AppCompatActivity() {
         binding.clearLogsBtn.setOnClickListener { viewModel.clearLogs() }
 
         observeViewModel()
+
+        // manifest 声明了 USB_DEVICE_ATTACHED 启动入口：
+        // 冷启动（插线拉起 App）时设备在启动 intent 里，与 onNewIntent 同样处理
+        if (intent?.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
+            handleUsbAttach(IntentCompat.getParcelableExtra(intent, UsbManager.EXTRA_DEVICE, UsbDevice::class.java))
+        }
     }
 
     private fun requestPermissionAndConnect(device: UsbDevice) {
@@ -166,9 +172,13 @@ class MainActivity : AppCompatActivity() {
         val permissionIntent = Intent(this, javaClass).apply {
             action = ACTION_USB_PERMISSION
         }
+        // Android 12 起 USB 授权结果由系统 fill-in 到此 PendingIntent，
+        // FLAG_IMMUTABLE 会丢弃 EXTRA_PERMISSION_GRANTED 导致授权永远失败，必须用 MUTABLE
+        val flags = if (android.os.Build.VERSION.SDK_INT >= 31)
+            android.app.PendingIntent.FLAG_MUTABLE else 0
         val pi = android.app.PendingIntent.getBroadcast(
             this, 0, permissionIntent,
-            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+            flags or android.app.PendingIntent.FLAG_UPDATE_CURRENT
         )
         usbManager.requestPermission(device, pi)
     }

@@ -19,9 +19,5 @@ class FirmwareImage {
             }
             return 0x10000L
         }
-
-        fun isMergeFirmware(files: List<FirmwareFile>): Boolean {
-            return files.size == 1 || files.all { it.address == 0L }
-        }
     }
 }

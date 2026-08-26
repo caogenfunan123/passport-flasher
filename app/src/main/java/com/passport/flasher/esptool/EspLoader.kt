@@ -623,15 +623,15 @@ class EspLoader(
     suspend fun after(mode: String = "hard_reset") {
         when (mode) {
             "hard_reset" -> {
+                info("正在复位设备...")
                 if (transport.isPassport()) {
-                    // USB-Serial/JTAG 无 RTS 连 EN，需专用 DTR/RTS 序列复位
-                    info("正在复位设备...")
-                    usbJtagSerialReset()
+                    hardResetUsbJtagSerial()
                 } else {
-                    info("通过 RTS 引脚硬复位...")
-                    delay(200)
+                    // 与官方 HardReset 一致：普通串口通过 RTS 脉冲复位
+                    delay(100)
+                    transport.setRTS(true)
+                    delay(100)
                     transport.setRTS(false)
-                    delay(200)
                 }
             }
             "soft_reset" -> {
@@ -640,6 +640,27 @@ class EspLoader(
             }
             "no_reset_stub" -> info("保持在 flasher stub 中。")
             else -> info("保持在 bootloader 中。")
+        }
+    }
+
+    /**
+     * USB-Serial/JTAG 设备写后复位，对齐官方 web-flasher 的 firmware-reset：
+     * 写 USB_SERIAL_JTAG 外设寄存器（0x60008000）断开下载连接并重启进固件；
+     * 失败时回退官方 custom_reset 序列 "D0|R1|W100|R0|W500|D0"。
+     * 注意不能用 usbJtagSerialReset——那是把芯片拉进下载模式的序列。
+     */
+    private suspend fun hardResetUsbJtagSerial() {
+        try {
+            val base = 0x60008000L
+            writeReg(base + 0xA8, 0x50D83AA1.toInt())
+            writeReg(base + 0x94, 2000)
+            writeReg(base + 0x90, 0xD0000102.toInt())
+            writeReg(base + 0xA8, 0)
+            delay(700)
+        } catch (e: Exception) {
+            debug("寄存器复位失败，回退 DTR/RTS 序列：${e.message}")
+            transport.setDTR(false); transport.setRTS(true); delay(100)
+            transport.setRTS(false); delay(500); transport.setDTR(false)
         }
     }
 

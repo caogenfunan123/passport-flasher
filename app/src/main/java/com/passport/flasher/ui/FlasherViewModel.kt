@@ -79,14 +79,10 @@ class FlasherViewModel(application: Application) : AndroidViewModel(application)
                     withContext(Dispatchers.IO) { espLoader.changeBaud() }
                     _chipInfo.value = "芯片：ESP32-C3（Stub 运行中）"
                     try {
-                        val flashId = withContext(Dispatchers.IO) { espLoader.readFlashId() }
-                        val sizeId = (flashId shr 16) and 0xff
-                        val sizeMap = mapOf(0x17 to "8MB", 0x18 to "16MB", 0x16 to "4MB")
-                        val flashSize = sizeMap[sizeId] ?: "未知"
+                        val flashSize = withContext(Dispatchers.IO) { espLoader.detectFlashSize() }
                         _chipInfo.value = "芯片：ESP32-C3，Flash：$flashSize"
-                        addLog("Flash ID：0x${flashId.toString(16)}，大小：$flashSize")
                     } catch (e: Exception) {
-                        addLog("读取 Flash ID 失败：${e.message}", true)
+                        addLog("读取 Flash 信息失败：${e.message}", true)
                     }
                 }
                 loader = espLoader
