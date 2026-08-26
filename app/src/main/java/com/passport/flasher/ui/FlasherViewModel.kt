@@ -56,6 +56,9 @@ class FlasherViewModel(application: Application) : AndroidViewModel(application)
     fun findPassport(): UsbDevice? = usbHelper.findPassport()
 
     fun connect(device: UsbDevice) {
+        // 权限回调 / USB 插入自动连 / 手动点击可能并发触发，重复连接会泄漏 transport
+        val state = _connectionState.value
+        if (state == ConnectionState.CONNECTING || state == ConnectionState.CONNECTED) return
         viewModelScope.launch {
             _connectionState.value = ConnectionState.CONNECTING
             addLog("正在连接设备：${device.productName ?: device.deviceName}…")

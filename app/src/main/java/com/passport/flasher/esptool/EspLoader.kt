@@ -478,11 +478,15 @@ class EspLoader(
         writeReg(SPI_USR2_REG.toLong(), cmdVal)
         writeReg(SPI_W0_REG.toLong(), 0)
         writeReg(SPI_CMD_REG.toLong(), SPI_USR_CMD)
-        for (i in 0 until 10) {
+        var i = 0
+        while (i < 10) {
             val v = readReg(SPI_CMD_REG.toLong()) and SPI_USR_CMD
             if (v == 0) break
             delay(10)
+            i++
         }
+        // 与官方 runSpiflashCommand 一致：SPI 命令未完成时必须报错，静默继续会读到垃圾值
+        if (i == 10) throw IOException("SPI 命令超时未完成")
         val status = readReg(SPI_W0_REG.toLong())
         writeReg(SPI_USR_REG.toLong(), oldUsr)
         writeReg(SPI_USR2_REG.toLong(), oldUsr2)
