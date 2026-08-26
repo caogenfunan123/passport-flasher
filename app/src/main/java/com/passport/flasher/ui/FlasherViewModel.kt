@@ -129,7 +129,11 @@ class FlasherViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun startWrite() {
-        val ldr = loader ?: return
+        val ldr = loader
+        if (ldr == null) {
+            addLog("请先连接设备", true)
+            return
+        }
         val files = _firmwareFiles.value
         if (files.isEmpty()) { addLog("未选择固件文件", true); return }
 

@@ -85,24 +85,27 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris: List<Uri> ->
         if (uris.isEmpty()) return@registerForActivityResult
-        val files = uris.map { uri -> readFirmwareFile(uri) }.filterNotNull()
-        if (files.size > MAX_FIRMWARE_FILES) {
+        // 与官方 web-flasher 一致：可重复选择累加文件，最多 8 个，同名跳过
+        val existing = viewModel.firmwareFiles.value
+        val fresh = uris.map { uri -> readFirmwareFile(uri) }.filterNotNull()
+            .filter { f -> existing.none { it.name == f.name && it.data.contentEquals(f.data) } }
+        if (fresh.isEmpty()) return@registerForActivityResult
+        val combined = existing + fresh
+        if (combined.size > MAX_FIRMWARE_FILES) {
             Toast.makeText(this, getString(R.string.toast_too_many_files, MAX_FIRMWARE_FILES), Toast.LENGTH_SHORT).show()
         }
-        val kept = files.take(MAX_FIRMWARE_FILES)
-        if (kept.isNotEmpty()) {
-            if (kept.size == 1) {
-                // 与官方 web-flasher 一致：单个文件按合并固件写入 0x0。
-                // 写 0x0 的必须是完整 ESP 镜像（0xE9 文件头），否则拒绝，避免覆盖 bootloader
-                val single = kept[0]
-                if (single.data.isEmpty() || single.data[0] != 0xE9.toByte()) {
-                    Toast.makeText(this, getString(R.string.toast_not_esp_image, single.name), Toast.LENGTH_SHORT).show()
-                    return@registerForActivityResult
-                }
-                viewModel.setFirmwareFiles(listOf(single.copy(address = 0x0L)))
-            } else {
-                viewModel.setFirmwareFiles(kept.map { f -> f.copy(address = FirmwareImage.inferAddress(f.name)) })
+        val kept = combined.take(MAX_FIRMWARE_FILES)
+        if (kept.size == 1) {
+            // 与官方 web-flasher 一致：单个文件按合并固件写入 0x0。
+            // 写 0x0 的必须是完整 ESP 镜像（0xE9 文件头），否则拒绝，避免覆盖 bootloader
+            val single = kept[0]
+            if (single.data.isEmpty() || single.data[0] != 0xE9.toByte()) {
+                Toast.makeText(this, getString(R.string.toast_not_esp_image, single.name), Toast.LENGTH_SHORT).show()
+                return@registerForActivityResult
             }
+            viewModel.setFirmwareFiles(listOf(single.copy(address = 0x0L)))
+        } else {
+            viewModel.setFirmwareFiles(kept.map { f -> f.copy(address = FirmwareImage.inferAddress(f.name)) })
         }
     }
 
