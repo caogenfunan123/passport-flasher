@@ -45,4 +45,7 @@
     <string name="toast_no_device">未找到 AI Passport 设备，请先插入设备</string>
     <string name="toast_usb_detached">USB 设备已拔出</string>
     <string name="toast_read_file_failed">读取文件失败：%1$s</string>
+    <string name="toast_not_bin">%1$s 不是 .bin 固件文件，已跳过</string>
+    <string name="toast_not_esp_image">%1$s 不是有效的 ESP 固件镜像（缺少 0xE9 文件头），已跳过</string>
+    <string name="toast_too_many_files">最多支持 %1$d 个固件文件，已截取前 %1$d 个</string>
 </resources>

@@ -29,6 +29,8 @@ import java.io.BufferedInputStream
 class MainActivity : AppCompatActivity() {
     companion object {
         const val ACTION_USB_PERMISSION = "com.passport.flasher.USB_PERMISSION"
+        // 与官方 web-flasher 一致：最多 8 个固件文件
+        const val MAX_FIRMWARE_FILES = 8
     }
 
     private lateinit var binding: ActivityMainBinding
@@ -84,22 +86,23 @@ class MainActivity : AppCompatActivity() {
     ) { uris: List<Uri> ->
         if (uris.isEmpty()) return@registerForActivityResult
         val files = uris.map { uri -> readFirmwareFile(uri) }.filterNotNull()
-        if (files.isNotEmpty()) {
-            val withAddresses = if (files.size == 1) {
-                val single = files[0]
-                val name = single.name.lowercase()
-                // 仅当明确是合并固件（或 bootloader）时才写入 0x0，
-                // 其余单文件（app.bin 等）按分区地址推断，避免覆盖 bootloader 变砖
-                val startFromZero = listOf("merged", "merge", "combined", "full", "bootloader", "factory")
-                    .any { name.contains(it) }
-                listOf(single.copy(address = if (startFromZero) 0x0L else FirmwareImage.inferAddress(name)))
-            } else {
-                files.map { f ->
-                    val addr = FirmwareImage.inferAddress(f.name)
-                    f.copy(address = addr)
+        if (files.size > MAX_FIRMWARE_FILES) {
+            Toast.makeText(this, getString(R.string.toast_too_many_files, MAX_FIRMWARE_FILES), Toast.LENGTH_SHORT).show()
+        }
+        val kept = files.take(MAX_FIRMWARE_FILES)
+        if (kept.isNotEmpty()) {
+            if (kept.size == 1) {
+                // 与官方 web-flasher 一致：单个文件按合并固件写入 0x0。
+                // 写 0x0 的必须是完整 ESP 镜像（0xE9 文件头），否则拒绝，避免覆盖 bootloader
+                val single = kept[0]
+                if (single.data.isEmpty() || single.data[0] != 0xE9.toByte()) {
+                    Toast.makeText(this, getString(R.string.toast_not_esp_image, single.name), Toast.LENGTH_SHORT).show()
+                    return@registerForActivityResult
                 }
+                viewModel.setFirmwareFiles(listOf(single.copy(address = 0x0L)))
+            } else {
+                viewModel.setFirmwareFiles(kept.map { f -> f.copy(address = FirmwareImage.inferAddress(f.name)) })
             }
-            viewModel.setFirmwareFiles(withAddresses)
         }
     }
 
@@ -175,6 +178,12 @@ class MainActivity : AppCompatActivity() {
                 it.moveToFirst()
                 if (nameIndex >= 0) it.getString(nameIndex) else "unknown.bin"
             } ?: "unknown.bin"
+
+            // 与官方 web-flasher 一致：只接受 .bin 固件文件
+            if (!name.lowercase().endsWith(".bin")) {
+                Toast.makeText(this, getString(R.string.toast_not_bin, name), Toast.LENGTH_SHORT).show()
+                return null
+            }
 
             val bytes = contentResolver.openInputStream(uri)?.use { stream ->
                 BufferedInputStream(stream).readBytes()
